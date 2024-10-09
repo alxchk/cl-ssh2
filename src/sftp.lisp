@@ -83,3 +83,21 @@ It is possible to combine `MAXFILES' and `EXTENSIONS' (retrieve 5 files with ext
     (ssh2.debug "Trying to delete remote file ~A" remote-path)
     (let ((result (libssh2-sftp-unlink-ex sftp remote-path)))
       (ssh2.debug "Deleting ~A resulted in ~A." remote-path result))))
+
+(defun sftp-put (ssh-connection local-path remote-path &key (modes #o644))
+  (with-sftp (sftp ssh-connection)
+    (let ((handle))
+      (unwind-protect
+           (progn
+             (ssh2.debug "Trying to send local file ~A to remote file ~A" local-path remote-path)
+             (setf handle (libssh2-sftp-open-ex sftp remote-path
+                                                (foreign-bitfield-value 'sftp-flags '(:write :creat :trunc))
+                                                modes
+                                                :file))
+             (with-open-file (in local-path :direction :input :element-type '(unsigned-byte 8))
+               (let ((buffer (make-array 1024 :element-type '(unsigned-byte 8))))
+                 (loop for numbytes = (read-sequence buffer in)
+                       until (zerop numbytes)
+                       do (cffi:with-foreign-array (array buffer `(:array :uint8 ,numbytes)) (libssh2-sftp-write handle array numbytes)))))
+             (ssh2.debug "Local file ~A was written to ~A" local-path remote-path)))
+      (when handle (libssh2-sftp-close-handle handle)))))
